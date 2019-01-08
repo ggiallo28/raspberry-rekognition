@@ -1,0 +1,20 @@
+{
+    "Input": {
+        "KinesisVideoStream": {
+            "Arn": "arn:aws:kinesisvideo:eu-west-1:831650818513:stream/XPeppers-Workshop-Raspberry-DataStream-v0/1546944460670"
+        }
+    },
+    "Output": {
+        "KinesisDataStream": {
+            "Arn": "arn:aws:kinesis:eu-west-1:831650818513:stream/XPeppers-Workshop-Raspberry-DataStream-v0"
+        }
+    },
+    "Name": "xpeppers",
+    "Settings": {
+        "FaceSearch": {
+            "CollectionId": "xpeppers",
+            "FaceMatchThreshold": 85.5
+        }
+    },
+    "RoleArn": "arn:aws:iam::831650818513:role/RekognitionServiceRole"
+}

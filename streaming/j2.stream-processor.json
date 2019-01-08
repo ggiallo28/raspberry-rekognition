@@ -1,0 +1,20 @@
+{
+    "Input": {
+        "KinesisVideoStream": {
+            "Arn": "{{video_stream_arn}}"
+        }
+    },
+    "Output": {
+        "KinesisDataStream": {
+            "Arn": "{{data_stream_arn}}"
+        }
+    },
+    "Name": "{{collection_id}}",
+    "Settings": {
+        "FaceSearch": {
+            "CollectionId": "{{collection_id}}",
+            "FaceMatchThreshold": 85.5
+        }
+    },
+    "RoleArn": "arn:aws:iam::831650818513:role/RekognitionServiceRole"
+}

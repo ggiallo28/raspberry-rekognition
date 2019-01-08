@@ -1,0 +1,69 @@
+# ansible-playbook main.yaml --ask-pass
+---
+- hosts: defaults
+  vars:
+    video_stream_arn: "arn:aws:kinesisvideo:eu-west-1:831650818513:stream/XPeppers-Workshop-Raspberry-DataStream-v0/1546944460670"
+    data_stream_arn: "arn:aws:kinesis:eu-west-1:831650818513:stream/XPeppers-Workshop-Raspberry-DataStream-v0"
+    collection_id: xpeppers
+    profile: xpeppers-test
+  tasks:
+  - name: Install a list of packages
+    apt:
+      name: "{{ packages }}"
+    vars:
+      packages:
+      - git
+      - cmake
+      - libtool
+      - libtool-bin
+      - automake
+      - g++
+      - curl
+      - pkg-config
+      - flex
+      - bison
+      - openjdk-8-jdk
+    become: yes
+  - name: Install AWS Cli
+    pip:
+      name: awscli
+    become: True
+  - name: Run Remote Script
+    shell: ./rekognition/amazon-kinesis-video-streams-producer-sdk-cpp/kinesis-video-native-build/set_kvs_sdk_env.sh
+  - template:
+      src: ./j2.stream-processor.json
+      dest: ./stream-processor.json
+    delegate_to: localhost
+  - name: Check Stream Processors Status
+    shell: aws rekognition list-stream-processors --profile {{profile}} --query 'StreamProcessors[?Name==`{{collection_id}}`].Status' --output text
+    register: playbook_stream_processor_status
+    delegate_to: localhost
+  - debug:
+    debug: var=playbook_stream_processor_status.stdout
+  - name: Delete Stream Processor
+    shell: aws rekognition delete-stream-processor --name {{collection_id}} --profile {{profile}}
+    delegate_to: localhost
+    when: playbook_stream_processor_status.stdout == "FAILED"
+  - name: Create Stream Processor
+    shell: aws rekognition create-stream-processor --cli-input-json file://./stream-processor.json --profile {{profile}}
+    delegate_to: localhost
+    when: playbook_stream_processor_status.stdout == ""
+  - name: Start Stream Processor
+    shell: aws rekognition start-stream-processor --name {{collection_id}} --profile {{profile}}
+    delegate_to: localhost
+    when: playbook_stream_processor_status.stdout == "STOPPED"
+  - name: List Stream Processor
+    shell: aws rekognition list-stream-processors --profile {{profile}}
+    register: playbook_stream_processor
+    delegate_to: localhost
+  - debug:
+    debug: var=playbook_stream_processor.stdout_lines
+
+  # aws rekognition list-stream-processors --query 'StreamProcessors[?Name==`xpeppers`].Status' --output text
+  # aws rekognition index-faces --collection-id xpeppers --image '{"S3Object":{"Bucket":"unversity-workshop.machine-learning","Name":"selfie/Paolo.png"}}' --external-image-id paolo --profile raspi
+  # sudo modprobe bcm2835-v4l2
+  # gst-launch-1.0 v4l2src do-timestamp=TRUE device=/dev/video0
+
+
+
+

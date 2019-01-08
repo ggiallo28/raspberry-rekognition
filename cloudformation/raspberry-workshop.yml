@@ -1,0 +1,138 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  Owner:
+    Description: Project Owner
+    Type: String
+    Default: XPeppers
+  Project:
+    Description: Project Name
+    Type: String
+    Default: Workshop-Raspberry
+  ShutUpDelay:
+    Description: Polly Voice Delay
+    Type: String
+    Default: 60000
+  Version:
+    Description: Infrastructure version
+    Type: Number
+    Default: 0
+
+Resources:
+  # TODO: add KinesisVideoStream definition, once it is available through Cloudformation
+  KinesisStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: !Sub "${Owner}-${Project}-DataStream-v${Version}"
+      ShardCount: 1
+      Tags:
+        -
+          Key: Project
+          Value: !Ref Project
+        -
+          Key: Owner
+          Value: !Ref Owner
+  Sqs:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${Owner}-${Project}-SQS-v${Version}"
+      ReceiveMessageWaitTimeSeconds: 20
+      Tags:
+        -
+          Key: Project
+          Value: !Ref Project
+        -
+          Key: Owner
+          Value: !Ref Owner
+
+  Parameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Description: Timestamp of voice messages
+      Name: !Sub "${Owner}${Project}Parameter_v${Version}"
+      Type: String
+      Value: '{}'
+
+  RekognitionServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - rekognition.amazonaws.com
+          Action: sts:AssumeRole
+      RoleName: "RekognitionServiceRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonRekognitionServiceRole
+        - arn:aws:iam::aws:policy/AmazonKinesisFullAccess
+
+  FunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action: sts:AssumeRole
+      RoleName: !Sub "${Owner}-${Project}-FunctionRole-${AWS::Region}-v${Version}"
+      Policies:
+      - PolicyName: !Sub "${Owner}-${Project}-FunctionPolicy-${AWS::Region}-v${Version}"
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Resource:
+            - "arn:aws:logs:*:*:*"
+          - Effect: Allow
+            Action:
+            - kinesis:GetRecords
+            - kinesis:GetShardIterator
+            - kinesis:DescribeStream
+            - kinesis:ListStreams
+            Resource:
+            - !GetAtt KinesisStream.Arn
+          - Effect: Allow
+            Action:
+            - sqs:SendMessage
+            Resource:
+            - !GetAtt Sqs.Arn
+          - Effect: Allow
+            Action:
+            - ssm:PutParameter
+            - ssm:GetParameter
+            Resource:
+            - "*"
+
+  LambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: lambda_function.lambda_handler
+      Runtime: python3.7
+      CodeUri: src
+      Role: !GetAtt FunctionRole.Arn
+      FunctionName: !Sub "${Owner}-${Project}-Rekognition-v${Version}"
+      Description: Process Kinesis Data Stream
+      Timeout: 60
+      Environment:
+        Variables:
+          SHUTUPDELAY: !Ref ShutUpDelay
+          SQSQUEUE: !Ref Sqs
+          PARAMETER: !Ref Parameter
+      Events:
+        Stream:
+          Type: Kinesis
+          Properties:
+            Stream: !GetAtt KinesisStream.Arn
+            BatchSize: 5
+            StartingPosition: LATEST

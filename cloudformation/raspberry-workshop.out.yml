@@ -1,0 +1,150 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  Owner:
+    Default: XPeppers
+    Description: Project Owner
+    Type: String
+  Project:
+    Default: Workshop-Raspberry
+    Description: Project Name
+    Type: String
+  ShutUpDelay:
+    Default: 60000
+    Description: Polly Voice Delay
+    Type: String
+  Version:
+    Default: 0
+    Description: Infrastructure version
+    Type: Number
+Resources:
+  FunctionRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action: sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+        Version: 2012-10-17
+      Policies:
+      - PolicyDocument:
+          Statement:
+          - Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+            Effect: Allow
+            Resource:
+            - arn:aws:logs:*:*:*
+          - Action:
+            - kinesis:GetRecords
+            - kinesis:GetShardIterator
+            - kinesis:DescribeStream
+            - kinesis:ListStreams
+            Effect: Allow
+            Resource:
+            - Fn::GetAtt:
+              - KinesisStream
+              - Arn
+          - Action:
+            - sqs:SendMessage
+            Effect: Allow
+            Resource:
+            - Fn::GetAtt:
+              - Sqs
+              - Arn
+          - Action:
+            - ssm:PutParameter
+            - ssm:GetParameter
+            Effect: Allow
+            Resource:
+            - '*'
+          Version: 2012-10-17
+        PolicyName:
+          Fn::Sub: ${Owner}-${Project}-FunctionPolicy-${AWS::Region}-v${Version}
+      RoleName:
+        Fn::Sub: ${Owner}-${Project}-FunctionRole-${AWS::Region}-v${Version}
+    Type: AWS::IAM::Role
+  KinesisStream:
+    Properties:
+      Name:
+        Fn::Sub: ${Owner}-${Project}-DataStream-v${Version}
+      ShardCount: 1
+      Tags:
+      - Key: Project
+        Value:
+          Ref: Project
+      - Key: Owner
+        Value:
+          Ref: Owner
+    Type: AWS::Kinesis::Stream
+  LambdaFunction:
+    Properties:
+      CodeUri: s3://sam-develop-deploy-eu-west-1/4137f378a034d40a89ad2f06b571d811
+      Description: Process Kinesis Data Stream
+      Environment:
+        Variables:
+          PARAMETER:
+            Ref: Parameter
+          SHUTUPDELAY:
+            Ref: ShutUpDelay
+          SQSQUEUE:
+            Ref: Sqs
+      Events:
+        Stream:
+          Properties:
+            BatchSize: 5
+            StartingPosition: LATEST
+            Stream:
+              Fn::GetAtt:
+              - KinesisStream
+              - Arn
+          Type: Kinesis
+      FunctionName:
+        Fn::Sub: ${Owner}-${Project}-Rekognition-v${Version}
+      Handler: lambda_function.lambda_handler
+      Role:
+        Fn::GetAtt:
+        - FunctionRole
+        - Arn
+      Runtime: python3.7
+      Timeout: 60
+    Type: AWS::Serverless::Function
+  Parameter:
+    Properties:
+      Description: Timestamp of voice messages
+      Name:
+        Fn::Sub: ${Owner}${Project}Parameter_v${Version}
+      Type: String
+      Value: '{}'
+    Type: AWS::SSM::Parameter
+  RekognitionServiceRole:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Action: sts:AssumeRole
+          Effect: Allow
+          Principal:
+            Service:
+            - rekognition.amazonaws.com
+        Version: 2012-10-17
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonRekognitionServiceRole
+      - arn:aws:iam::aws:policy/AmazonKinesisFullAccess
+      RoleName: RekognitionServiceRole
+    Type: AWS::IAM::Role
+  Sqs:
+    Properties:
+      QueueName:
+        Fn::Sub: ${Owner}-${Project}-SQS-v${Version}
+      ReceiveMessageWaitTimeSeconds: 20
+      Tags:
+      - Key: Project
+        Value:
+          Ref: Project
+      - Key: Owner
+        Value:
+          Ref: Owner
+    Type: AWS::SQS::Queue
+Transform: AWS::Serverless-2016-10-31
